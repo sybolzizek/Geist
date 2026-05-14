@@ -1,0 +1,39 @@
+[build-system]
+requires = ["setuptools>=64"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "geist"
+version = "0.1.0"
+description = "Bounded recursive runtime re-entry for agent systems — the same core, the same self, a different context"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.9"
+keywords = ["agent", "llm", "recursive", "selfcall", "bounded"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+
+[project.urls]
+Source = "https://github.com/your-account/geist"
+Tracker = "https://github.com/your-account/geist/issues"
+
+[tool.setuptools.packages.find]
+include = ["geist*"]
+
+[tool.pytest.ini_options]
+testpaths = ["."]
+python_files = ["test_*.py"]
+
+[tool.mypy]
+python_version = "3.9"
+strict = true
+disallow_untyped_defs = false
