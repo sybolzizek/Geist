@@ -10,7 +10,7 @@ from typing import Any, Callable
 from geist.context import ContextBundle, build_runtime_context, load_context_bundle
 from geist.core.fractal import FractalCall, FractalLimits, FractalRun, FractalRuntime
 from geist.local import LocalToolDispatcher
-from geist.provider import OpenAICompatibleProvider, build_provider_from_env
+from geist.provider import OpenAICompatibleProvider, apply_dotenv, build_provider_from_env
 from geist.session import SessionRef, SessionStore
 from geist.trust import TrustStore
 
@@ -54,6 +54,7 @@ class GeistAgent:
         limits: FractalLimits | None = None,
     ) -> None:
         self.workspace = Path(workspace).resolve()
+        apply_dotenv(self.workspace)
         self.provider = provider or build_provider_from_env()
         self.dispatcher = dispatcher or LocalToolDispatcher(self.workspace)
         self.session_store = session_store or SessionStore()

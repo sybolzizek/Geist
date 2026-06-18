@@ -290,6 +290,7 @@ Management commands:
 
 ```powershell
 geist login --api-key <key> --base-url <url> --model <model>
+geist doctor
 geist trust
 geist sessions
 geist sessions --json
@@ -303,6 +304,30 @@ Interactive commands:
 - `/compact`
 - `/trust`
 - `/exit`
+
+## Distribution
+
+The Python distribution is named `geist-agent`, while the import package and CLI
+command remain `geist`.
+
+Supported local entry points:
+
+```powershell
+python -m pip install -e ".[dev]"
+geist --help
+python -m geist --help
+```
+
+The repository also includes an npm/pnpm launcher at `npm/bin/geist.js`. It
+locates Python 3.10+, adds the bundled `src` directory to `PYTHONPATH`, and runs
+`python -m geist.cli`. This keeps npm as a thin distribution shell rather than a
+second implementation of the agent.
+
+The npm package exposes both `geist` and `geist-agent` bin names. Provider setup
+can be done with either full arguments or an interactive `geist login`, and
+`geist doctor` checks whether the local install and provider config are usable.
+
+More detail lives in `docs/install_distribution.md`.
 
 ## Repository Layout
 

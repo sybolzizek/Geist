@@ -7,10 +7,11 @@ from pathlib import Path
 import pytest
 
 from geist.agent import GeistAgent
+from geist import __version__
 from geist.context import load_context_bundle
 from geist.core.fractal import NATIVE_FRACTAL_PROTOCOL
 from geist.cli import main as cli_main
-from geist.provider import OpenAICompatibleProvider, ProviderConfig, load_auth_config, save_auth_config
+from geist.provider import OpenAICompatibleProvider, ProviderConfig, apply_dotenv, load_auth_config, save_auth_config
 from geist.session import SessionStore
 from geist.trust import TrustStore
 
@@ -116,6 +117,58 @@ def test_cli_login_writes_auth_config(tmp_path: Path, monkeypatch: pytest.Monkey
 
     assert code == 0
     assert load_auth_config()["model"] == "cli-model"
+
+
+def test_cli_login_can_prompt(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("GEIST_HOME", str(tmp_path / "home"))
+    answers = iter(["http://provider/v1", "prompt-model"])
+    monkeypatch.setattr("geist.cli.getpass.getpass", lambda _: "prompt-key")
+    monkeypatch.setattr("builtins.input", lambda _: next(answers))
+
+    code = cli_main(["login"])
+
+    assert code == 0
+    auth = load_auth_config()
+    assert auth["api_key"] == "prompt-key"
+    assert auth["base_url"] == "http://provider/v1"
+    assert auth["model"] == "prompt-model"
+
+
+def test_cli_doctor_reports_provider_status(tmp_path: Path, monkeypatch: pytest.MonkeyPatch, capsys: pytest.CaptureFixture[str]) -> None:
+    monkeypatch.setenv("GEIST_HOME", str(tmp_path / "home"))
+    monkeypatch.setenv("GEIST_API_KEY", "key")
+    monkeypatch.setenv("GEIST_BASE_URL", "http://provider/v1")
+    monkeypatch.setenv("GEIST_MODEL", "doctor-model")
+
+    code = cli_main(["doctor", "-C", str(tmp_path), "--json"])
+
+    payload = json.loads(capsys.readouterr().out)
+    assert code == 0
+    assert payload["provider"]["ok"] is True
+    assert payload["provider"]["model"] == "doctor-model"
+
+
+def test_cli_version_flag(capsys: pytest.CaptureFixture[str]) -> None:
+    with pytest.raises(SystemExit) as exc:
+        cli_main(["--version"])
+
+    assert exc.value.code == 0
+    assert __version__ in capsys.readouterr().out
+
+
+def test_apply_dotenv_supports_legacy_provider_keys(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    for name in ("GEIST_API_KEY", "GEIST_BASE_URL", "GEIST_MODEL"):
+        monkeypatch.delenv(name, raising=False)
+    (tmp_path / ".env").write_text(
+        "api_key='k，'\nbase_url=https://provider.test/v1，\nmodel_name=model-x\n",
+        encoding="utf-8",
+    )
+
+    applied = apply_dotenv(tmp_path)
+
+    assert applied["GEIST_API_KEY"] == "k"
+    assert applied["GEIST_BASE_URL"] == "https://provider.test/v1"
+    assert applied["GEIST_MODEL"] == "model-x"
 
 
 def test_openai_provider_parses_chat_completion() -> None:

@@ -1,0 +1,32 @@
+{
+  "name": "geist-agent",
+  "version": "0.1.0",
+  "description": "Fractal runtime kernel for liberation-oriented agent systems",
+  "license": "MIT",
+  "type": "commonjs",
+  "bin": {
+    "geist": "npm/bin/geist.js",
+    "geist-agent": "npm/bin/geist.js"
+  },
+  "files": [
+    "src/**/*.py",
+    "npm/bin/geist.js",
+    "pyproject.toml",
+    "LICENSE",
+    "docs/technical_overview.md",
+    "docs/install_distribution.md"
+  ],
+  "keywords": [
+    "agent",
+    "llm",
+    "fractal",
+    "runtime",
+    "coding-agent"
+  ],
+  "engines": {
+    "node": ">=16"
+  },
+  "scripts": {
+    "test": "python -m pytest -q"
+  }
+}

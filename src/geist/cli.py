@@ -4,19 +4,21 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import getpass
 import json
 import sys
 from pathlib import Path
 from typing import Any
 
+from geist import __version__
 from geist.agent import GeistAgent, result_to_json_text
-from geist.provider import ProviderError, save_auth_config
+from geist.provider import ProviderConfig, ProviderError, apply_dotenv, auth_config_path, save_auth_config
 from geist.trust import TrustStore
 
 
 def main(argv: list[str] | None = None) -> int:
     raw = list(sys.argv[1:] if argv is None else argv)
-    if raw and raw[0] in {"trust", "sessions", "login"}:
+    if raw and raw[0] in {"trust", "sessions", "login", "doctor"}:
         parser = _build_command_parser()
         args = parser.parse_args(raw)
     else:
@@ -31,6 +33,8 @@ def main(argv: list[str] | None = None) -> int:
         return _login(args)
     if args.command == "sessions":
         return _sessions(args, workspace)
+    if args.command == "doctor":
+        return _doctor(args, workspace)
     if args.prompt:
         return asyncio.run(_run_print(args, workspace))
     return asyncio.run(_run_repl(args, workspace))
@@ -52,6 +56,7 @@ def _build_run_parser() -> argparse.ArgumentParser:
     parser.add_argument("--trusted", action="store_true", help="Trust this project for this run.")
     parser.add_argument("--no-trust", action="store_true", help="Do not load trusted project-local .geist context for this run.")
     parser.add_argument("--debug", action="store_true", help="Show compact runtime trace events during the run.")
+    parser.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     parser.set_defaults(command=None)
     return parser
 
@@ -64,12 +69,15 @@ def _build_command_parser() -> argparse.ArgumentParser:
     sessions = sub.add_parser("sessions", help="Show session storage location for a workspace.")
     sessions.add_argument("-C", "--cwd", help="Workspace directory. Default current directory.")
     sessions.add_argument("--json", action="store_true", help="Emit JSON.")
+    doctor = sub.add_parser("doctor", help="Check local Geist installation and provider configuration.")
+    doctor.add_argument("-C", "--cwd", help="Workspace directory. Default current directory.")
+    doctor.add_argument("--json", action="store_true", help="Emit JSON.")
     login = sub.add_parser("login", help="Save OpenAI-compatible provider configuration.")
     login.add_argument("-C", "--cwd", help=argparse.SUPPRESS)
     login.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
-    login.add_argument("--api-key", required=True)
-    login.add_argument("--base-url", default="https://api.openai.com/v1")
-    login.add_argument("--model", required=True)
+    login.add_argument("--api-key")
+    login.add_argument("--base-url")
+    login.add_argument("--model")
     return parser
 
 
@@ -79,7 +87,7 @@ async def _run_print(args: argparse.Namespace, workspace: Path) -> int:
         agent = _agent(args, workspace)
         result = await agent.run_turn(prompt)
     except ProviderError as exc:
-        return _error(str(exc), json_mode=args.json)
+        return _error(_format_provider_error(exc), json_mode=args.json)
     if args.json:
         print(result_to_json_text(result))
     else:
@@ -93,7 +101,7 @@ async def _run_repl(args: argparse.Namespace, workspace: Path) -> int:
     try:
         agent = _agent(args, workspace)
     except ProviderError as exc:
-        print(f"provider error: {exc}", file=sys.stderr)
+        print(f"provider error: {_format_provider_error(exc)}", file=sys.stderr)
         return 2
     print(f"geist | {workspace}")
     if agent.session:
@@ -185,14 +193,75 @@ def _sessions(args: argparse.Namespace, workspace: Path) -> int:
     return 0
 
 
-def _login(args: argparse.Namespace) -> int:
+def _doctor(args: argparse.Namespace, workspace: Path) -> int:
+    applied = apply_dotenv(workspace)
+    provider_ok = True
+    provider_error = ""
+    provider_model = ""
+    provider_base_url = ""
     try:
-        path = save_auth_config(api_key=args.api_key, base_url=args.base_url, model=args.model)
+        config = ProviderConfig.from_env()
+        provider_model = config.model
+        provider_base_url = config.base_url
+    except ProviderError as exc:
+        provider_ok = False
+        provider_error = str(exc)
+    payload = {
+        "version": __version__,
+        "python": sys.version.split()[0],
+        "python_executable": sys.executable,
+        "workspace": str(workspace),
+        "auth_config": str(auth_config_path()),
+        "dotenv_applied": sorted(applied),
+        "provider": {
+            "ok": provider_ok,
+            "model": provider_model,
+            "base_url": provider_base_url,
+            "error": provider_error,
+        },
+    }
+    if args.json:
+        print(json.dumps(payload, ensure_ascii=False, indent=2))
+        return 0 if provider_ok else 1
+    print(f"geist {payload['version']}")
+    print(f"python {payload['python']} | {payload['python_executable']}")
+    print(f"workspace {payload['workspace']}")
+    print(f"auth {payload['auth_config']}")
+    if payload["dotenv_applied"]:
+        print("dotenv " + ", ".join(payload["dotenv_applied"]))
+    if provider_ok:
+        print(f"provider ok | {provider_model} | {provider_base_url}")
+        return 0
+    print(f"provider missing | {provider_error}")
+    print("run `geist login` or set GEIST_API_KEY, GEIST_BASE_URL, and GEIST_MODEL")
+    return 1
+
+
+def _login(args: argparse.Namespace) -> int:
+    api_key = args.api_key or getpass.getpass("API key: ").strip()
+    base_url = args.base_url
+    if not base_url:
+        typed = input("Base URL [https://api.openai.com/v1]: ").strip()
+        base_url = typed or "https://api.openai.com/v1"
+    model = args.model or input("Model: ").strip()
+    try:
+        path = save_auth_config(api_key=api_key, base_url=base_url, model=model)
     except ProviderError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 2
     print(f"saved provider config: {path}")
     return 0
+
+
+def _format_provider_error(exc: ProviderError) -> str:
+    message = str(exc)
+    if "GEIST_API_KEY" in message or "GEIST_MODEL" in message:
+        return (
+            f"{message}\n"
+            "Run `geist login` to save provider config, or set GEIST_API_KEY, "
+            "GEIST_BASE_URL, and GEIST_MODEL in your environment."
+        )
+    return message
 
 
 def _error(message: str, *, json_mode: bool) -> int:

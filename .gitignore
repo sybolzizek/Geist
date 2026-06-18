@@ -3,3 +3,6 @@
 __pycache__/
 .pytest_cache/
 geist.egg-info/
+geist_agent.egg-info/
+node_modules/
+*.tgz

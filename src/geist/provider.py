@@ -131,6 +131,49 @@ def build_provider_from_env() -> OpenAICompatibleProvider:
     return OpenAICompatibleProvider(ProviderConfig.from_env())
 
 
+def load_dotenv(path: str | Path) -> dict[str, str]:
+    """Load simple KEY=value pairs from a .env file without mutating env."""
+    env_path = Path(path)
+    if env_path.is_dir():
+        env_path = env_path / ".env"
+    if not env_path.exists():
+        return {}
+    values: dict[str, str] = {}
+    for line in env_path.read_text(encoding="utf-8", errors="replace").splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or "=" not in stripped:
+            continue
+        key, value = stripped.split("=", 1)
+        key = key.strip()
+        if not key:
+            continue
+        values[key] = _clean_env_value(value)
+    return values
+
+
+def apply_dotenv(path: str | Path) -> dict[str, str]:
+    """Apply supported .env provider keys when env vars are not already set."""
+    values = load_dotenv(path)
+    mapping = {
+        "GEIST_API_KEY": ("GEIST_API_KEY", "OPENAI_API_KEY", "api_key"),
+        "GEIST_BASE_URL": ("GEIST_BASE_URL", "OPENAI_BASE_URL", "base_url"),
+        "GEIST_MODEL": ("GEIST_MODEL", "OPENAI_MODEL", "model", "model_name"),
+    }
+    applied: dict[str, str] = {}
+    for target, aliases in mapping.items():
+        if os.getenv(target):
+            continue
+        value = ""
+        for alias in aliases:
+            if values.get(alias):
+                value = values[alias]
+                break
+        if value:
+            os.environ[target] = value
+            applied[target] = value
+    return applied
+
+
 def auth_config_path(home: str | Path | None = None) -> Path:
     root = Path(home or os.getenv("GEIST_HOME") or (Path.home() / ".geist")).resolve()
     return root / "agent" / "auth.json"
@@ -173,6 +216,13 @@ def save_auth_config(
         encoding="utf-8",
     )
     return path
+
+
+def _clean_env_value(value: str) -> str:
+    text = str(value or "").strip()
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in {"'", '"'}:
+        text = text[1:-1].strip()
+    return text.strip().strip(",").strip("\uFF0C").strip()
 
 
 def _float_env(name: str, default: float) -> float:
